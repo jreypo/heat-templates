@@ -1,0 +1,72 @@
+heat_template_version: 2015-04-30
+
+description: >
+  Heat template to deploy two instances and connect them to an existing
+  private network
+
+# Stack parameters
+parameters:
+  private_network_id:
+    type: string
+    label: private
+    description: UUID for the private network
+    default: 601a692c-9eb5-467d-8bb2-ef51e2b79419
+  flavor_name:
+    type: string
+    label: flavor name
+    description: Name of the Nova flavor name
+    default: m2.tiny
+  image_name:
+    type: string
+    label: image name
+    description: Name of the glance image from which to deploy the instances
+    default: fedora-24-x64
+  keypair:
+    type: string
+    label: keypair
+    description: SSH keypair
+
+# Stack resources
+resources:
+  vm1_port1:
+    type: OS::Neutron::Port
+    properties:
+      admin_state_up: true
+      network_id: { get_param : private_network_id }
+      security_groups:
+        - default
+        - core_services
+  vm2_port1:
+    type: OS::Neutron::Port
+    properties:
+      admin_state_up: true
+      network_id: { get_param: private_network_id }
+      security_groups:
+        - default
+        - core_services
+  vm1:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_param: keypair }
+      name: vm1
+      flavor: { get_param: flavor_name }
+      image: { get_param: image_name }
+      networks:
+        - port: { get_resource: vm1_port1 }
+  vm2:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_param: keypair }
+      name: vm2
+      flavor: { get_param: flavor_name }
+      image: { get_param: image_name }
+      networks:
+        - port: { get_resource: vm2_port1 }
+
+outputs:
+  vm1_private_ip:
+    description: Private IP address for vm1
+    value: { get_attr: [vm1, first_address] }
+  vm2_private_ip:
+    description: Private IP address for vm2
+    value: { get_attr: [vm2, first_address]}
