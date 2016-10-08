@@ -1,0 +1,113 @@
+heat_template_version: 2015-04-30
+
+description: >
+  Heat template to deploy two instance, a private network and
+  configure the connectivity, including a router and a floating IP
+  for one of the instances
+
+parameters:
+  external_network_id:
+    type: string
+    label: public
+    description: UUID for the external network
+    default: 57b7661e-fc3b-4cb8-9336-cc3fbbe9fdb7
+  flavor_name:
+    type: string
+    label: flavor name
+    description: Name of the Nova flavor name
+    default: m2.tiny
+  image_name:
+    type: string
+    label: image name
+    description: Name of the glance image from which to deploy the instances
+    default: fedora-24-x64
+  keypair:
+    type: string
+    label: keypair
+    description: SSH keypair
+  dns:
+    type: string
+    label: DNS servers
+    description: comma separated list of DNS servers
+    default: "8.8.8.8"
+
+# Stack resources
+resources:
+  labnet2:
+    type: OS::Neutron::Net
+    properties:
+      admin_state_up: true
+      name: labnet2
+  labsubnet2:
+    type: OS::Neutron::Subnet
+    properties:
+      name: labsubnet2
+      cidr: 172.16.11.0/24
+      dns_nameservers: [ {get_param: dns } ]
+      enable_dhcp: true
+      gateway_ip: 172.16.11.1
+      network_id: { get_resource: labnet2 }
+
+  router2:
+    type: OS::Neutron::Router
+    properties:
+      admin_state_up: true
+      name: router2
+      external_gateway_info: { network: { get_param: external_network_id }}
+  router2_int1:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router2 }
+      subnet_id: { get_resource: labsubnet2 }
+
+  instance1_port1:
+    type: OS::Neutron::Port
+    properties:
+      admin_state_up: true
+      network_id: { get_resource: labnet2 }
+      security_groups:
+        - default
+        - core_services
+  instance2_port1:
+    type: OS::Neutron::Port
+    properties:
+      admin_state_up: true
+      network_id: { get_resource: labnet2 }
+      security_groups:
+        - default
+        - core_services
+
+  instance1:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_param: keypair }
+      name: instance1
+      flavor: { get_param: flavor_name }
+      image: { get_param: image_name }
+      networks:
+        - port: { get_resource: instance1_port1 }
+  instance2:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_param: keypair }
+      name: instance2
+      flavor: { get_param: flavor_name }
+      image: { get_param: image_name }
+      networks:
+        - port: { get_resource: instance2_port1 }
+  instance1_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network_id: { get_param: external_network_id }
+      port_id: { get_resource: instance1_port1 }
+
+outputs:
+  instance1_private_ip:
+    description: IP address of instance1 on the private network.
+    value: { get_attr: [ instance1, first_address] }
+  instance2_private_ip:
+    description: IP address of instance2 on the private network.
+    value: { get_attr: [ instance2, first_address] }
+  instance1_floating_ip:
+    description: Floating IP for the first instance
+    value: { get_attr: [ instance1_floating_ip, floating_ip_address] }
