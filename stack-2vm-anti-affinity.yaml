@@ -1,0 +1,107 @@
+heat_template_version: 2015-04-30
+
+description: >
+  Heat template to deploy two instances, network configuration and
+  anti-affinity groups to keep them separated
+
+parameters:
+  external_network_id:
+    type: string
+    label: public
+    description: UUID for the external network
+    default: 57b7661e-fc3b-4cb8-9336-cc3fbbe9fdb7
+  flavor_name:
+    type: string
+    label: flavor name
+    description: Name of the Nova flavor name
+  image_name:
+    type: string
+    label: image name
+    description: Name of the glance image from which to deploy the instances
+    default: fedora-24-x64
+  keypair:
+    type: string
+    label: keypair
+    description: SSH keypair
+
+resources:
+  # Network setup
+  labnet03:
+    type: OS::Neutron::Net
+    properties:
+      admin_state_up: true
+      name: labnet03
+  labsubnet03:
+    type: OS::Neutron::Subnet
+    properties:
+      name: labsubnet03
+      cidr: 172.16.20.0/24
+      dns_nameservers: [8.8.8.8]
+      enable_dhcp: true
+      network_id: { get_resource: labnet03 }
+  router03:
+    type: OS::Neutron::Router
+    properties:
+      admin_state_up: true
+      name: router03
+      external_gateway_info: { "network": { get_param: external_network_id }}
+  router03_int0:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router03 }
+      subnet_id: { get_resource: labsubnet03 }
+
+  # Network ports
+  vm3_port0:
+    type: OS::Neutron::Port
+    properties:
+      admin_state_up: true
+      network_id: { get_resource: labnet03 }
+      security_groups:
+        - default
+        - core_services
+  vm4_port0:
+    type: OS::Neutron::Port
+    properties:
+      admin_state_up: true
+      network_id: { get_resource: labnet03 }
+      security_groups:
+        - default
+        - core_services
+
+  # Anti-affinity group setup
+  af_policy_group:
+    type: OS::Nova::ServerGroup
+    properties:
+      name: sample-af-policy-group
+      policies: [anti-affinity]
+
+  # Instance provisioning
+  vm3:
+    type: OS::Nova::Server
+    properties:
+      name: vm3
+      key_name: { get_param: keypair }
+      image: { get_param: image_name }
+      flavor: { get_param: flavor_name }
+      networks:
+        - port: { get_resource: vm3_port0 }
+      scheduler_hints: { group: { get_resource: af_policy_group }}
+  vm4:
+    type: OS::Nova::Server
+    properties:
+      name: vm4
+      key_name: { get_param: keypair }
+      image: { get_param: image_name }
+      flavor: { get_param: flavor_name }
+      networks:
+        - port: { get_resource: vm4_port0 }
+      scheduler_hints: { group: { get_resource: af_policy_group }}
+
+outputs:
+  vm3_private_ip:
+    description: IP address of vm3 on the private network.
+    value: { get_attr: [ vm3, first_address] }
+  vm4_private_ip:
+    description: IP address of vm4 on the private network.
+    value: { get_attr: [ vm4, first_address] }
